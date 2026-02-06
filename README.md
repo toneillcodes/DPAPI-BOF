@@ -1,12 +1,12 @@
-# DPAPI-BOF
-A Beacon Object File (BOF) for Cobalt Strike designed to identify DPAPI blobs, calculate the corresponding Master Key paths, and  exfiltrate data.
+# DPAPI BOF
+A Beacon Object File (BOF) for Cobalt Strike designed to identify DPAPI blobs, calculate the corresponding Master Key paths, and exfiltrate data.
 
 ## Disclaimer
-[!WARNING] 
-This tool is still under development and may crash your beacon. If your beacon dies, you were warned.
+> [!WARNING]  
+> This tool is still under development and may crash your beacon. If your beacon dies, you were warned.
 
-[!NOTE] 
-This tool is intended for authorized security auditing and post-exploitation research only.
+> [!NOTE]  
+> This tool is intended for authorized security auditing and post-exploitation research only.
 
 ## Features
 - **Scanning**: Identifies files containing DPAPI magic bytes.
@@ -120,3 +120,6 @@ The BOF uses Dynamic Function Resolution (DFR) to interact with Windows APIs, en
 - [ ] **Artifact Download:** Add the ability to automatically download any blobs and Master Key files to the CS Teamserver.
 - [ ] **Enhanced Output:** Rework the output to use a dynamic buffer instead of a fixed global variable.
 - [ ] **Registry Hunting:** Ability to hunt and extract DPAPI data from the registry.
+- [ ] **NdrClientCall3 Decryption**: Ability to decrypt secrets using the NdrClientCall3 approach from EvilBytecode
+
+[EvilBytecode - CustomDpapi](https://github.com/EvilBytecode/CustomDpapi)

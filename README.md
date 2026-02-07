@@ -1,6 +1,8 @@
 # DPAPI BOF
 A Beacon Object File (BOF) for Cobalt Strike designed to identify DPAPI blobs, calculate the corresponding Master Key paths, and exfiltrate data.
 
+<img src="assets/sample-beacon-output.png" style="width: 800px;"></img>
+
 ## Disclaimer
 > [!WARNING]  
 > This tool is still under development and may crash your beacon. If your beacon dies, you were warned.

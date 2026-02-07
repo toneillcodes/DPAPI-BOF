@@ -114,14 +114,15 @@ The BOF uses Dynamic Function Resolution (DFR) to interact with Windows APIs, en
 1. There is a hard limit on the output buffer. I really need to change this approach.
 2. This only searches for blobs stored in a binary format and won't find data encoded with other methods, like XML or Base64.
 3. We don't want to load every file to check for DPAPI content, so the code checks the first 1024 bytes.
+4. Since the focus is OPSEC, the tool only resolves Master Key files from the current user profile, but could utilize a flag to enable a wider search.
 
 ## Future Improvements
 - [ ] **Recursive Scanning**: Expanding the functionality to scan sub-directories.
+- [ ] **Master Key Resolution**: Flag to enable master key resolution across all user profiles.
 - [ ] **File Browser Integration:** Add the ability to scan a directory from the context menu in the File Browser.
 - [ ] **Text-Based Hunting:** Add the ability to find the magic bytes in plaintext.
 - [ ] **Artifact Download:** Add the ability to automatically download any blobs and Master Key files to the CS Teamserver.
-- [ ] **Enhanced Output:** Rework the output to use a dynamic buffer instead of a fixed global variable.
+- [x] ~~**Enhanced Output:** Rework the output to use a dynamic buffer instead of a fixed global variable.~~ DONE 2/6/2026
 - [ ] **Registry Hunting:** Ability to hunt and extract DPAPI data from the registry.
 - [ ] **NdrClientCall3 Decryption**: Ability to decrypt secrets using the NdrClientCall3 approach from EvilBytecode
-
 [EvilBytecode - CustomDpapi](https://github.com/EvilBytecode/CustomDpapi)

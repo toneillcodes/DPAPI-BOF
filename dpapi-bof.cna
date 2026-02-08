@@ -5,6 +5,12 @@ beacon_command_register(
     "Usage: dpapi_scan [C:\\path\\to\\folder\\*]"
 );
 
+beacon_command_register(
+    "dpapi_describe", 
+    "Parses a specific DPAPI blob and dumps all structure fields.", 
+    "Usage: dpapi_describe [C:\\path\\to\\file]"
+);
+
 alias dpapi_scan {
     local('$bid $path $args $data');
 
@@ -24,8 +30,8 @@ alias dpapi_scan {
     }
 
     # Read the compiled BOF file
-    # Ensure dpapi_bof.o is in the same directory as this script
-    $handle = openf(script_resource("dpapi-bof.o"));
+    # Ensure dpapi-bof-scan.o is in the same directory as this script
+    $handle = openf(script_resource("dpapi-bof-scan.o"));
     $data   = readb($handle, -1);
     closef($handle);
 
@@ -34,5 +40,37 @@ alias dpapi_scan {
 
     # Log the action and execute
     btask($bid, "Running DPAPI Scanner \(Dump Raw: $3\) against: $path");
+    beacon_inline_execute($bid, $data, "go", $args);
+}
+
+alias dpapi_describe {
+    local('$bid $path $args $data');
+
+    # $1 is the Beacon ID, $2 is the first argument (the path)
+    $bid = $1;
+    $path = $2;
+    # If a third argument is provided and it's "true", set flag to 1
+    if ($3 eq "true") {
+        $dump_raw = int(1);
+    } else {
+        $dump_raw = int(0);
+    }    
+
+    if ($path eq "") {
+        berror($bid, "Please specify a path. Example: dpapi_describe C:\\Users\\Name\\Desktop\\secret.out");
+        return;
+    }
+
+    # Read the compiled BOF file
+    # Ensure dpapi-bof-describe.o is in the same directory as this script
+    $handle = openf(script_resource("dpapi-bof-describe.o"));
+    $data   = readb($handle, -1);
+    closef($handle);
+
+    # Pack the arguments using the 'z' format (null-terminated string)
+    $args = bof_pack($bid, "zi", $path, $dump_raw);
+
+    # Log the action and execute
+    btask($bid, "Running DPAPI Describe \(Dump Raw: $3\) against: $path");
     beacon_inline_execute($bid, $data, "go", $args);
 }

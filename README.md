@@ -22,7 +22,7 @@ A Beacon Object File (BOF) for Cobalt Strike designed to identify DPAPI blobs, c
 - **Small Payload**: Optimized size (typically < 6.1KB) minimizes the RWE memory allocation signature.
 
 ## Installation
-1. Copy `dpapi-bof.c` and `beacon.h` to your Linux/Windows build machine.
+1. Copy `dpapi-bof-scan.c`, `dpapi-bof-describe.c`, `utils.h`, and `beacon.h` to your build machine.
 2. Compile the object file (see Compilation section).
 3. Load `dpapi-bof.cna` into Cobalt Strike via the **Script Manager**.
 
@@ -142,7 +142,7 @@ The BOF uses Dynamic Function Resolution (DFR) to interact with Windows APIs, en
 4. **The Operator** uses a tool like Mimikatz or a Python script offline to decrypt secret.
 
 ## Known Limitations
-1. There is a hard limit on the output buffer. I really need to change this approach.
+1. ~~There is a hard limit on the output buffer. I really need to change this approach.~~
 2. This only searches for blobs stored in a binary format and won't find data encoded with other methods, like XML or Base64.
 3. We don't want to load every file to check for DPAPI content, so the code checks the first 1024 bytes.
 4. Since the focus is OPSEC, the tool only resolves Master Key files from the current user profile, but could utilize a flag to enable a wider search.

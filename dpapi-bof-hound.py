@@ -58,6 +58,9 @@ def transform_bof_output_to_og(csv_input_path, json_output_path):
 
         # Construct final OpenGraph structure
         og_data = {
+            "metadata": {
+                "source_kind": "DPAPI"
+            },          
             "graph": {
                 "nodes": nodes,
                 "edges": edges

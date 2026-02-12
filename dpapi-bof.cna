@@ -2,7 +2,7 @@
 beacon_command_register(
     "dpapi_scan", 
     "Scans a directory for DPAPI blobs and locates associated Master Keys, with the option to dump hex-formatted bytes.", 
-    "Usage: dpapi_scan /path:C:\\path\\to\\folder\\* [/dump:true|false]"
+    "Usage: dpapi_scan /path:C:\\path\\to\\folder\\* [/dump:true|false] [/csv:true|false]"
 );
 
 beacon_command_register(
@@ -64,7 +64,7 @@ alias dpapi_scan {
     closef($handle);
 
     # Pack the arguments using the 'z' format (null-terminated string), i (integer), i (integer)
-    $args = bof_pack($bid, "zi", $path_val, $dump_opt, $csv_opt);
+    $args = bof_pack($bid, "zii", $path_val, $dump_opt, $csv_opt);
 
     # Log the action and execute
     btask($bid, "Running DPAPI Scan with: $path_val");

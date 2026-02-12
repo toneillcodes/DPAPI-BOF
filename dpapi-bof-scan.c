@@ -6,6 +6,7 @@
 // Global output object managed by BeaconFormat API
 formatp outputbuffer;
 BOOL g_DUMP_RAW = FALSE;
+BOOL g_OUTPUT_CSV = FALSE;
 
 // Helper to read a file and append its hex representation to the output buffer
 void dumpFileBytes(char* filePath) {
@@ -125,6 +126,18 @@ void parseFile(char* filePath) {
             KERNEL32$CloseHandle(hToken);
         }
 
+        if(g_OUTPUT_CSV) {
+            // --- CSV OUTPUT START ---    
+            // Nodes
+            BeaconFormatPrintf(&outputbuffer, "node,User,%s,%s\n", szSid, szSid);
+            BeaconFormatPrintf(&outputbuffer, "node,DPAPIMasterKey,%s,%s\n", guidStr, guidStr);
+            BeaconFormatPrintf(&outputbuffer, "node,DPAPIBlob,%s,%s,%ls\n", filePath, filePath, szLocalDesc ? szLocalDesc : L"None");
+
+            // Edges
+            BeaconFormatPrintf(&outputbuffer, "edge,OwnsKey,%s,%s\n", szSid, guidStr);
+            BeaconFormatPrintf(&outputbuffer, "edge,EncryptedWith,%s,%s\n", filePath, guidStr);
+            // --- CSV OUTPUT END ---
+        }
         BeaconFormatPrintf(&outputbuffer, "- - - - - - - - - - - - - - - - -\n");
 
         // --- CLEANUP ---
@@ -139,12 +152,16 @@ void go(char* args, int len) {
     char* searchMask = NULL;
     int searchMaskLen = 0;
     int dumpFlag = 0;
+    int csvFlag = 0;
 
     // Extract arguments passed from the Aggressor Script
     BeaconDataParse(&parser, args, len);
     searchMask = BeaconDataExtract(&parser, &searchMaskLen);
     dumpFlag = BeaconDataInt(&parser);
+    csvFlag = BeaconDataInt(&parser);
+
     g_DUMP_RAW = (dumpFlag == 1) ? TRUE : FALSE;
+    g_OUTPUT_CSV = (csvFlag == 1) ? TRUE : FALSE;
 
     // Allocate the dynamic output buffer (initially 16KB) should it be lower?
     BeaconFormatAlloc(&outputbuffer, 16384);

@@ -12,15 +12,17 @@ beacon_command_register(
 );
 
 alias dpapi_scan {
-    local('$bid $path_val $dump_val $dump_opt $key $val $args $data $handle');
+    local('$bid $path_val $dump_val $dump_opt $csv_val $csv_opt $key $val $args $data $handle');
 
     # $1 is the Beacon ID
     $bid = $1;
 
     # Initialize defaults
     $path_val      = $null;
-    $dump_val      = 0;
+    $dump_val      = $null;
     $dump_opt      = 0;
+    $csv_val       = $null;
+    $csv_opt       = 0;
 
     # Parse through arguments using split(), abandoned regex due to inconsistent results
     for($i = 1; $i < size(@_); $i++) {
@@ -41,6 +43,9 @@ alias dpapi_scan {
             else if ($key eq "/dump") {
                 $dump_val = $val;
             }
+            else if ($key eq "/csv") {
+                $csv_val = $val;
+            }            
         }
     }
 
@@ -50,6 +55,7 @@ alias dpapi_scan {
     }
 
     if (lc($dump_val) eq "true") { $dump_opt = 1; }
+    if (lc($csv_val) eq "true") { $csv_opt = 1; }
 
     # Read the compiled BOF file
     # Ensure dpapi-bof-scan.o is in the same directory as this script
@@ -57,8 +63,8 @@ alias dpapi_scan {
     $data   = readb($handle, -1);
     closef($handle);
 
-    # Pack the arguments using the 'z' format (null-terminated string), i (integer)
-    $args = bof_pack($bid, "zi", $path_val, $dump_opt);
+    # Pack the arguments using the 'z' format (null-terminated string), i (integer), i (integer)
+    $args = bof_pack($bid, "zi", $path_val, $dump_opt, $csv_opt);
 
     # Log the action and execute
     btask($bid, "Running DPAPI Scan with: $path_val");

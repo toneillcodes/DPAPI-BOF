@@ -13,13 +13,16 @@ A modular library of Beacon Object Files (BOFs) designed to parse DPAPI blobs an
 ## BOF Library
 | BOF | Arguments | Description |
 |----|----|----|
-| dpapi_scan | /path:c:\example\path\* [/dump:true\|false] | DPAPI scanner |
+| dpapi_scan | /path:c:\example\path\* [/dump:true\|false] [/csv:true\|false] | DPAPI scanner |
+| dpapi_scan_light | /path:c:\example\path\* | DPAPI scanner, lightweight |
 | dpapi_describe | /path:c:\example\path\* [/dump:true\|false] | DPAPI blob detailed output |
 
 ## Features
 - **Scanning**: Identifies files containing DPAPI magic bytes.
+- **Inspection**: The describe operation can parse a blob and output information that may provide context to the operator.
 - **Master Key Mapping**: Automatically generates the expected path for the required Master Key based on the user's SID.
 - **Data Exfiltration**: Extract the raw bytes from the DPAPI credential material for offline processing/decoding/cracking.
+- **OpenGraph Support**: Extract the DPAPI metadata in a CSV format and transform to OpenGraph format with the Python helper script `dpapi-bof-hound.py`
 
 ## Stealth Considerations
 - **No 'Fork & Run'**: Executes within the Beacon process, avoiding suspicious child process creation.
@@ -28,14 +31,20 @@ A modular library of Beacon Object Files (BOFs) designed to parse DPAPI blobs an
 - **Small Payload**: Size minimizes the RWE memory allocation signature (typically ~7KB without ).
 
 ## Installation
-1. Copy `dpapi-bof-scan.c`, `dpapi-bof-describe.c`, `utils.h`, and `beacon.h` to your build machine.
-2. Compile the object file (see Compilation section).
+1. Copy `dpapi-bof-scan.c`, `dpapi-bof-scan-light.c`, `dpapi-bof-describe.c`, `utils.h`, and `beacon.h` to your build machine.
+2. Compile the desired components to object files (see Compilation section).
 3. Load `dpapi-bof.cna` into Cobalt Strike via the **Script Manager**.
 
 ## Compilation
 ```cmd
 attacker@LAB-DEVBOX /cygdrive/c/Users/Administrator/Desktop/bofs
 $ x86_64-w64-mingw32-gcc -c dpapi-bof-scan.c -o dpapi-bof-scan.o
+
+attacker@LAB-DEVBOX /cygdrive/c/Users/Administrator/Desktop/bofs
+$ 
+
+attacker@LAB-DEVBOX /cygdrive/c/Users/Administrator/Desktop/bofs
+$ x86_64-w64-mingw32-gcc -c dpapi-bof-scan-light.c -o dpapi-bof-scan-light.o
 
 attacker@LAB-DEVBOX /cygdrive/c/Users/Administrator/Desktop/bofs
 $ 
@@ -138,6 +147,12 @@ dwSignLen:           32
 [+] BOF Finished.
 ```
 
+## OpenGraph Support
+1. Generate CSV output.
+2. Copy CSV output from the Beacon console.
+3. Use `dpapi-bof-hound.py` to transform into OpenGraph format.
+4. Upload the output JSON to BloodHound for analysis.
+
 ## Technical Details
 The BOF uses Dynamic Function Resolution (DFR) to interact with Windows APIs, ensuring it remains small and memory-resident without touching the disk (besides the files it reads). It uses the BeaconDownloadFile API to securely sync files back to the Teamserver.
 
@@ -149,7 +164,7 @@ The BOF uses Dynamic Function Resolution (DFR) to interact with Windows APIs, en
 ## Known Limitations
 1. ~~There is a hard limit on the output buffer. I really need to change this approach.~~
 2. This only searches for blobs stored in a binary format and won't find data encoded with other methods, like XML or Base64.
-3. We don't want to load every file to check for DPAPI content, so the code checks the first 1024 bytes.
+3. We don't want to load the entirety of each file to check for DPAPI content, so the code checks the first 1024 bytes.
 4. Since the focus is OPSEC, the tool only resolves Master Key files from the current user profile, but could utilize a flag to enable a wider search.
 
 ## Future Improvements

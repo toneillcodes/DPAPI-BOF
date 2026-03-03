@@ -3,6 +3,7 @@
 
 #include <windows.h>
 #include <sddl.h>
+#include <ntsecapi.h>
 
 // --- DFR Declarations ---
 DECLSPEC_IMPORT HANDLE WINAPI KERNEL32$CreateFileA(LPCSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE);
@@ -21,11 +22,18 @@ DECLSPEC_IMPORT BOOL   WINAPI ADVAPI32$OpenProcessToken(HANDLE, DWORD, PHANDLE);
 DECLSPEC_IMPORT BOOL   WINAPI ADVAPI32$GetTokenInformation(HANDLE, TOKEN_INFORMATION_CLASS, LPVOID, DWORD, PDWORD);
 DECLSPEC_IMPORT BOOL   WINAPI ADVAPI32$ConvertSidToStringSidA(PSID, LPSTR*);
 
+DECLSPEC_IMPORT NTSTATUS WINAPI ADVAPI32$LsaOpenPolicy(PLSA_UNICODE_STRING, PLSA_OBJECT_ATTRIBUTES, ACCESS_MASK, PLSA_HANDLE);
+DECLSPEC_IMPORT NTSTATUS WINAPI ADVAPI32$LsaQueryInformationPolicy(LSA_HANDLE, POLICY_INFORMATION_CLASS, PVOID*);
+DECLSPEC_IMPORT NTSTATUS WINAPI ADVAPI32$LsaFreeMemory(PVOID);
+DECLSPEC_IMPORT NTSTATUS WINAPI ADVAPI32$LsaClose(LSA_HANDLE);
+
 DECLSPEC_IMPORT void* WINAPI MSVCRT$malloc(size_t);
 DECLSPEC_IMPORT void   WINAPI MSVCRT$free(void*);
 DECLSPEC_IMPORT void* WINAPI MSVCRT$memcpy(void*, const void*, size_t);
+DECLSPEC_IMPORT void* WINAPI MSVCRT$memset(void*, int, size_t);
 DECLSPEC_IMPORT size_t WINAPI MSVCRT$strlen(const char*);
 DECLSPEC_IMPORT int    WINAPI MSVCRT$strcmp(const char*, const char*);
+DECLSPEC_IMPORT char* WINAPI MSVCRT$strrchr(const char*, int);
 DECLSPEC_IMPORT int    WINAPI MSVCRT$_snprintf(char*, size_t, const char*, ...);
 DECLSPEC_IMPORT int    WINAPI MSVCRT$_vsnprintf(char*, size_t, const char*, va_list);
 
@@ -33,8 +41,10 @@ DECLSPEC_IMPORT int    WINAPI MSVCRT$_vsnprintf(char*, size_t, const char*, va_l
 #define malloc    MSVCRT$malloc
 #define free      MSVCRT$free
 #define memcpy    MSVCRT$memcpy
+#define memset    MSVCRT$memset
 #define strlen    MSVCRT$strlen
 #define strcmp    MSVCRT$strcmp
+#define strrchr   MSVCRT$strrchr
 #define snprintf  MSVCRT$_snprintf
 
 // --- Shared Utility Functions ---

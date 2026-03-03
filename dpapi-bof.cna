@@ -1,8 +1,14 @@
 # Register the command in the Beacon console
 beacon_command_register(
     "dpapi_scan", 
-    "Scans a directory for DPAPI blobs and locates associated Master Keys, with the option to dump hex-formatted bytes.", 
-    "Usage: dpapi_scan /path:C:\\path\\to\\folder\\* [/dump:true|false]"
+    "Scans a directory for DPAPI blobs and locates associated Master Keys, with the option to dump hex-formatted bytes or output data in CSV format.", 
+    "Usage: dpapi_scan /path:C:\\path\\to\\folder\\* [/dump:true|false] [/csv:true|false]"
+);
+
+beacon_command_register(
+    "dpapi_scan_light", 
+    "Scans a directory for DPAPI blobs and locates associated Master Keys. No frills.",
+    "Usage: dpapi_scan_light /path:C:\\path\\to\\folder\\*"
 );
 
 beacon_command_register(
@@ -12,15 +18,17 @@ beacon_command_register(
 );
 
 alias dpapi_scan {
-    local('$bid $path_val $dump_val $dump_opt $key $val $args $data $handle');
+    local('$bid $path_val $dump_val $dump_opt $csv_val $csv_opt $key $val $args $data $handle');
 
     # $1 is the Beacon ID
     $bid = $1;
 
     # Initialize defaults
     $path_val      = $null;
-    $dump_val      = 0;
+    $dump_val      = $null;
     $dump_opt      = 0;
+    $csv_val       = $null;
+    $csv_opt       = 0;
 
     # Parse through arguments using split(), abandoned regex due to inconsistent results
     for($i = 1; $i < size(@_); $i++) {
@@ -41,15 +49,19 @@ alias dpapi_scan {
             else if ($key eq "/dump") {
                 $dump_val = $val;
             }
+            else if ($key eq "/csv") {
+                $csv_val = $val;
+            }            
         }
     }
 
     if ($path_val is $null) {
-        berror($bid, "Please specify a path. Example: dpapi_scan /path:C:\\Users\\Name\\Desktop\\*");
+        berror($bid, "Please specify a path. Example: dpapi_scan /path:C:\\path\\to\\folder\\* [/dump:true|false] [/csv:true|false]");
         return;
     }
 
     if (lc($dump_val) eq "true") { $dump_opt = 1; }
+    if (lc($csv_val) eq "true") { $csv_opt = 1; }
 
     # Read the compiled BOF file
     # Ensure dpapi-bof-scan.o is in the same directory as this script
@@ -57,11 +69,58 @@ alias dpapi_scan {
     $data   = readb($handle, -1);
     closef($handle);
 
-    # Pack the arguments using the 'z' format (null-terminated string), i (integer)
-    $args = bof_pack($bid, "zi", $path_val, $dump_opt);
+    # Pack the arguments using the 'z' format (null-terminated string), i (integer), i (integer)
+    $args = bof_pack($bid, "zii", $path_val, $dump_opt, $csv_opt);
 
     # Log the action and execute
     btask($bid, "Running DPAPI Scan with: $path_val");
+    beacon_inline_execute($bid, $data, "go", $args);
+}
+
+alias dpapi_scan_light {
+    local('$bid $path_val $key $val $args $data $handle');
+
+    # $1 is the Beacon ID
+    $bid = $1;
+
+    # Initialize defaults
+    $path_val      = $null;
+
+    # Parse through arguments using split(), abandoned regex due to inconsistent results
+    for($i = 1; $i < size(@_); $i++) {
+        $arg = @_[$i];
+
+        # Split the argument by the first colon only
+        $parts = split(':', $arg, 2);     
+                   
+        # Check if we have both a key and a value
+        if (size($parts) == 2) {
+            $key = $parts[0];
+            $val = $parts[1];
+            #blog2($bid, $key);
+            # Compare keys
+            if ($key eq "/path") {
+                $path_val = $val;
+            }  
+        }
+    }
+
+    if ($path_val is $null) {
+        berror($bid, "Please specify a path. Example: dpapi_scan_light /path:C:\\path\\to\\folder\\*");
+        return;
+    }
+
+    # Read the compiled BOF file
+    # Ensure dpapi-bof-scan-light.o is in the same directory as this script
+    $handle = openf(script_resource("dpapi-bof-scan-light.o"));
+    $data   = readb($handle, -1);
+    closef($handle);
+
+    # Pack the arguments using the 'z' format (null-terminated string)
+    $args = bof_pack($bid, "z", $path_val);
+
+    # Log the action and execute
+    btask($bid, "Running DPAPI Scan Light with: $path_val");
     beacon_inline_execute($bid, $data, "go", $args);
 }
 
@@ -99,7 +158,7 @@ alias dpapi_describe {
     }
 
     if ($path_val is $null) {
-        berror($bid, "Please specify a path. Example: dpapi_describe /path:C:\\Users\\Name\\Desktop\\secret.out");
+        berror($bid, "Please specify a path. Example: dpapi_describe /path:C:\\Users\\Name\\Desktop\\secret.out [/dump:true|false]");
         return;
     }
 

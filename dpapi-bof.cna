@@ -8,7 +8,7 @@ beacon_command_register(
 beacon_command_register(
     "dpapi_scan_light", 
     "Scans a directory for DPAPI blobs and locates associated Master Keys. No frills.",
-    "Usage: dpapi_scan /path:C:\\path\\to\\folder\\*"
+    "Usage: dpapi_scan_light /path:C:\\path\\to\\folder\\*"
 );
 
 beacon_command_register(
@@ -56,7 +56,7 @@ alias dpapi_scan {
     }
 
     if ($path_val is $null) {
-        berror($bid, "Please specify a path. Example: dpapi_scan /path:C:\\Users\\Name\\Desktop\\*");
+        berror($bid, "Please specify a path. Example: dpapi_scan /path:C:\\path\\to\\folder\\* [/dump:true|false] [/csv:true|false]");
         return;
     }
 
@@ -106,7 +106,7 @@ alias dpapi_scan_light {
     }
 
     if ($path_val is $null) {
-        berror($bid, "Please specify a path. Example: dpapi_scan /path:C:\\Users\\Name\\Desktop\\*");
+        berror($bid, "Please specify a path. Example: dpapi_scan_light /path:C:\\path\\to\\folder\\*");
         return;
     }
 
@@ -158,7 +158,7 @@ alias dpapi_describe {
     }
 
     if ($path_val is $null) {
-        berror($bid, "Please specify a path. Example: dpapi_describe /path:C:\\Users\\Name\\Desktop\\secret.out");
+        berror($bid, "Please specify a path. Example: dpapi_describe /path:C:\\Users\\Name\\Desktop\\secret.out [/dump:true|false]");
         return;
     }
 
